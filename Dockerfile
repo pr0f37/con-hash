@@ -1,78 +1,64 @@
 # syntax=docker/dockerfile:1
 
 ARG PYTHON_VERSION=3.14.0
+ARG VIRTUAL_ENV=/opt/venv
+
 FROM python:${PYTHON_VERSION}-slim AS base
+ARG VIRTUAL_ENV
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Prevents Python from writing pyc files.
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV UV_LINK_MODE=copy
-ENV UV_PYTHON_DOWNLOADS=0
-ENV UV_COMPILE_BYTECODE=1
-ENV VIRTUAL_ENV=/opt/venv
-ENV PATH="${VIRTUAL_ENV}/bin:$PATH"
-RUN uv venv /opt/venv
-# Use the virtual environment automatically
+ENV PYTHONDONTWRITEBYTECODE=1 \
+  PYTHONUNBUFFERED=1 \
+  UV_LINK_MODE=copy \
+  UV_PYTHON_DOWNLOADS=0 \
+  UV_COMPILE_BYTECODE=1 \
+  VIRTUAL_ENV=${VIRTUAL_ENV} \
+  PATH="${VIRTUAL_ENV}/bin:$PATH"
+
 WORKDIR /app
 
-RUN --mount=type=cache,target=/root/.cache/pip \
+RUN uv venv ${VIRTUAL_ENV}
+
+RUN --mount=type=cache,target=/root/.cache/uv \
   --mount=type=bind,source=uv.lock,target=uv.lock \
   --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-  uv sync --locked --no-install-project --no-editable --active
+  uv sync --frozen --no-install-project --no-editable --active --no-dev
 
-# Copy the source code into the container.
 COPY . .
-
 RUN --mount=type=cache,target=/root/.cache/uv \
-  uv sync --locked --no-editable --active
+  uv sync --frozen --no-editable --active --no-dev
 
 
-FROM python:${PYTHON_VERSION}-slim AS dev
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-COPY --from=base /opt/venv /opt/venv
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV UV_LINK_MODE=copy
-ENV UV_PYTHON_DOWNLOADS=0
-ENV UV_COMPILE_BYTECODE=1
-ENV VIRTUAL_ENV=/opt/venv
-ENV PATH="${VIRTUAL_ENV}/bin:$PATH"
-WORKDIR /app
-
-# Copy the source code into the container.
-COPY . .
-
+FROM base AS dev
 RUN --mount=type=cache,target=/root/.cache/uv \
-  uv sync --locked --active
+  uv sync --frozen --active
+ENTRYPOINT ["uvicorn", "con_hash.main:app", "--host=0.0.0.0", "--port=8000", "--reload" ]
+
 
 FROM python:${PYTHON_VERSION}-slim AS application
-# Copy the environment, but not the source code
-
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV UV_LINK_MODE=copy
-ENV UV_PYTHON_DOWNLOADS=0
-ENV UV_COMPILE_BYTECODE=1
-ENV VIRTUAL_ENV=/opt/venv
-ENV PATH="${VIRTUAL_ENV}/bin:$PATH"
+ARG VIRTUAL_ENV
 ARG UID=10001
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+  PYTHONUNBUFFERED=1 \
+  VIRTUAL_ENV=${VIRTUAL_ENV} \
+  PATH="${VIRTUAL_ENV}/bin:$PATH"
+
 RUN adduser \
   --disabled-password \
   --gecos "" \
   --home "/app" \
-  --shell "/sbin/nologin" \
   --no-create-home \
   --uid "${UID}" \
-  appuser
+  appuser && \
+  mkdir -p /app && chown appuser:appuser /app
 
 WORKDIR /app
-RUN chown appuser:appuser /app
-COPY --from=base --chown=appuser:appuser /opt/venv /opt/venv
-COPY --chown=appuser:appuser ./static ./static
-# Switch to the non-privileged user to run the application.
+
+COPY --from=base --chown=appuser:appuser ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+COPY --from=base --chown=appuser:appuser /app/static ./static
+
 USER appuser
-# Run the application
 EXPOSE 8000
 
 ENTRYPOINT ["uvicorn", "con_hash.main:app", "--host=0.0.0.0", "--port=8000" ]
