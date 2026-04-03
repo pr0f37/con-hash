@@ -1,0 +1,25 @@
+[project]
+name = "con-hash"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [{ name = "pr0f37 🚀", email = "adam.nowik@gmail.com" }]
+requires-python = ">=3.14"
+dependencies = [
+  "debugpy>=1.8.20",
+  "fastapi[standard]>=0.135.2",
+  "pydantic>=2.12.5",
+  "pytest>=9.0.2",
+  "redis>=7.4.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.7,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.2",
+    "ruff>=0.15.9",
+]

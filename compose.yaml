@@ -1,0 +1,111 @@
+x-redis-common: &redis-common
+  image: redis:latest
+  restart: always
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 5s
+
+services:
+  app:
+    build:
+      context: .
+      target: dev
+    entrypoint:
+      [
+        "uvicorn",
+        "con_hash.main:app",
+        "--host=0.0.0.0",
+        "--port=8000",
+        "--reload",
+      ]
+    ports:
+      - 8000:8000
+    depends_on:
+      redis-0: { condition: service_healthy }
+      redis-1: { condition: service_healthy }
+      redis-2: { condition: service_healthy }
+      redis-3: { condition: service_healthy }
+      redis-4: { condition: service_healthy }
+      redis-insight: { condition: service_started }
+    configs:
+      - source: redis-config-yaml
+        target: /app/static/redis_conns.yaml
+        mode: 0644
+    develop:
+      watch:
+        - action: sync
+          path: ./src/
+          target: /app/src
+          initial_sync: true
+    restart: unless-stopped
+
+  redis-0:
+    <<: *redis-common
+    ports: ["6379:6379"]
+    volumes: ["redis_data_0:/data"]
+
+  redis-1:
+    <<: *redis-common
+    ports: ["6380:6379"]
+    volumes: ["redis_data_1:/data"]
+
+  redis-2:
+    <<: *redis-common
+    ports: ["6381:6379"]
+    volumes: ["redis_data_2:/data"]
+
+  redis-3:
+    <<: *redis-common
+    ports: ["6382:6379"]
+    volumes: ["redis_data_3:/data"]
+
+  redis-4:
+    <<: *redis-common
+    ports: ["6383:6379"]
+    volumes: ["redis_data_4:/data"]
+
+  redis-insight:
+    image: redis/redisinsight:latest
+    restart: always
+    ports:
+      - "5540:5540"
+    depends_on:
+      redis-0: { condition: service_healthy }
+      redis-1: { condition: service_healthy }
+      redis-2: { condition: service_healthy }
+      redis-3: { condition: service_healthy }
+      redis-4: { condition: service_healthy }
+    configs:
+      - source: redis-insight-json
+        target: /data/connections.json
+        mode: 0644
+    environment:
+      - RI_PRE_SETUP_DATABASES_PATH=/data/connections.json
+
+configs:
+  redis-insight-json:
+    content: |
+      [
+        {"host": "redis-0", "port": 6379, "name": "Redis-0"},
+        {"host": "redis-1", "port": 6379, "name": "Redis-1"},
+        {"host": "redis-2", "port": 6379, "name": "Redis-2"},
+        {"host": "redis-3", "port": 6379, "name": "Redis-3"},
+        {"host": "redis-4", "port": 6379, "name": "Redis-4"}
+      ]
+  redis-config-yaml:
+    content: |
+      - redis://redis-0:6379/0
+      - redis://redis-1:6379/0
+      - redis://redis-2:6379/0
+      - redis://redis-3:6379/0
+      - redis://redis-4:6379/0
+
+volumes:
+  redis_data_0:
+  redis_data_1:
+  redis_data_2:
+  redis_data_3:
+  redis_data_4:
